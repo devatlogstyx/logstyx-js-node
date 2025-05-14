@@ -23,10 +23,39 @@ module.exports = (options) => {
         screen: null
     };
 
-
-    return useLogstyx({
+    const logstyx = useLogstyx({
         ...options,
         device,
         signatureFunc: generateSignature,
     })
+
+    if (options?.captureUncaught === true) {
+        try {
+            if (typeof process !== "undefined" && typeof window === "undefined") {
+                process.on("uncaughtException", (err) =>
+                    logstyx.send("error", { message: err.message, stack: err.stack })
+                );
+            }
+        } catch (e) {
+            console.error(e)
+        }
+    }
+
+    if (options?.captureUnhandledRejections === true) {
+        try {
+            const handler = (reason) => {
+                const message = reason instanceof Error ? reason.message : String(reason);
+                const stack = reason instanceof Error ? reason.stack : undefined;
+                logstyx.send("error", { message, stack });
+            };
+
+            logstyx.on("unhandledRejection", handler);
+        } catch (e) {
+            console.error(e)
+        }
+    }
+
+    return logstyx
+
+
 }
