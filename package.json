@@ -1,0 +1,18 @@
+{
+  "name": "logstyx-js-node",
+  "version": "1.0.0",
+  "description": "logstyx sdk for nodejs",
+  "main": "./dist/logstyx-js-node.js",
+  "scripts": {
+    "build": "node esbuild.config.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "dev@logstyx.com",
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.25.4"
+  },
+  "dependencies": {
+    "logstyx-js-core": "github:devatlogstyx/logstyx-js-core#release"
+  }
+}
