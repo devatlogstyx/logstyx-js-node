@@ -49,7 +49,7 @@ module.exports = (options) => {
                 logstyx.send("error", { message, stack });
             };
 
-            logstyx.on("unhandledRejection", handler);
+            process.on("unhandledRejection", handler);
         } catch (e) {
             console.error(e)
         }
