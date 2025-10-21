@@ -14,6 +14,6 @@
     "esbuild": "^0.25.4"
   },
   "dependencies": {
-    "logstyx-js-core": "github:devatlogstyx/logstyx-js-core#release"
+    "logstyx-js-core": "github:devatlogstyx/logstyx-js-core"
   }
 }
