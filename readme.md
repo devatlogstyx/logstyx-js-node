@@ -14,7 +14,7 @@ Welcome to the **logstyx-js-node** SDK! This package provides a way to interact 
 To install this package, you can use npm. Make sure you have Node.js version 18 or higher installed.
 
 ```bash
-npm install github:devatlogstyx/logstyx-js-node#release
+npm install github:devatlogstyx/logstyx-js-node
 ```
 
 ## Usage
