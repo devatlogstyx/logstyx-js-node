@@ -33,7 +33,11 @@ module.exports = (options) => {
         try {
             if (typeof process !== "undefined" && typeof window === "undefined") {
                 process.on("uncaughtException", (err) =>
-                    logstyx.send("error", { message: err.message, stack: err.stack })
+                    logstyx.send("error", {
+                        title: err?.name || "Unknown Error",
+                        message: err?.message,
+                        stack: err?.stack || null
+                    })
                 );
             }
         } catch (e) {
@@ -46,7 +50,10 @@ module.exports = (options) => {
             const handler = (reason) => {
                 const message = reason instanceof Error ? reason.message : String(reason);
                 const stack = reason instanceof Error ? reason.stack : undefined;
-                logstyx.send("error", { message, stack });
+                const title = reason instanceof Error ? reason.name : "Unhandled Rejection";
+                logstyx.send("error", {
+                    title, error: message, stack
+                });
             };
 
             process.on("unhandledRejection", handler);
