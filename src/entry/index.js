@@ -52,7 +52,7 @@ module.exports = (options) => {
                 const stack = reason instanceof Error ? reason.stack : undefined;
                 const title = reason instanceof Error ? reason.name : "Unhandled Rejection";
                 logstyx.send("error", {
-                    title, error: message, stack
+                    title, message, stack
                 });
             };
 
