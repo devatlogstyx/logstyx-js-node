@@ -33,7 +33,7 @@ module.exports = (options) => {
         try {
             if (typeof process !== "undefined" && typeof window === "undefined") {
                 process.on("uncaughtException", (err) =>
-                    logstyx.error({
+                    logstyx.critical({
                         title: err?.name || "Unknown Error",
                         message: err?.message,
                         stack: err?.stack || null
@@ -51,7 +51,7 @@ module.exports = (options) => {
                 const message = reason instanceof Error ? reason.message : String(reason);
                 const stack = reason instanceof Error ? reason.stack : undefined;
                 const title = reason instanceof Error ? reason.name : "Unhandled Rejection";
-                logstyx.error({
+                logstyx.critical({
                     title, message, stack
                 });
             };
