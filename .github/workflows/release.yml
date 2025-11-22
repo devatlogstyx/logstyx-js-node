@@ -1,0 +1,116 @@
+name: Build & Deploy to Release
+
+on:
+  workflow_dispatch:  # Manual trigger from GitHub UI
+    inputs:
+      version_bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch  # 1.0.0 -> 1.0.1
+          - minor  # 1.0.0 -> 1.1.0
+          - major  # 1.0.0 -> 2.0.0
+          - none   # No version change (just rebuild)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0  # Fetch all history for proper versioning
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        if: ${{ github.event.inputs.version_bump != 'none' }}
+        run: |
+          # Bump version in package.json
+          npm version ${{ github.event.inputs.version_bump }} --no-git-tag-version
+          
+          # Commit the version change
+          git add package.json package-lock.json
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          git commit -m "chore: bump version to v${NEW_VERSION}"
+          
+          # Create tag
+          git tag "v${NEW_VERSION}"
+          
+          # Push the version bump commit and tag to main
+          git push origin main --follow-tags
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Get current version
+        id: package_version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Build project
+        run: npm run build
+
+      - name: Push to release branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Backup necessary files
+          cp package.json /tmp/package.json
+          cp README.md /tmp/README.md || true
+
+          # Switch to orphan release branch
+          git checkout --orphan release
+          git reset --hard
+
+          # Restore necessary files
+          mv /tmp/package.json .
+          mv /tmp/README.md . || true
+
+          # Remove unnecessary files
+          rm -rf .github/ node_modules/ src/
+
+          # Commit and push to release branch
+          git add .
+          git commit -m "Auto-build dist for release v${{ steps.package_version.outputs.version }}"
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" release
+
+      - name: Create GitHub Release
+        if: ${{ github.event.inputs.version_bump != 'none' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.package_version.outputs.version }}
+          name: Release v${{ steps.package_version.outputs.version }}
+          body: |
+            ## What's Changed
+            Version bumped: **${{ github.event.inputs.version_bump }}**
+            
+            Install via:
+            ```bash
+            npm install ${{ github.repository }}#v${{ steps.package_version.outputs.version }}
+            ```
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## 🚀 Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** v${{ steps.package_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Bump Type:** ${{ github.event.inputs.version_bump }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release Branch:** Updated ✅" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.version_bump }}" != "none" ]; then
+            echo "- **GitHub Release:** Created ✅" >> $GITHUB_STEP_SUMMARY
+          fi
