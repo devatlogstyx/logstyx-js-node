@@ -106,9 +106,16 @@ const logstyx = require('logstyx-js-node')({
     apiKey: 'YOUR_API_KEY',
     autoInstrument: true,
     
+    // Optional: Configure what to capture
     ignorePaths: ['/health', '/metrics'],
     slowRequestThreshold: 1000,
-    redactFields: ['password', 'token', 'creditCard']
+    redactFields: ['password', 'token', 'creditCard'],
+    
+    // Add custom context to all auto-logged requests
+    contextHook: (req) => ({
+        tenantId: req.headers['x-tenant-id'],
+        orgId: req.user?.organizationId
+    })
 });
 
 // Then require your framework
@@ -174,9 +181,39 @@ app.listen(3000);
 
 Each log includes:
 - HTTP method, path, URL
-- Status code
-- Response time
+- Status code and response time
 - IP address and user agent
+- Request/response body (with field redaction)
+- Headers (with field redaction)
+- Query parameters and route params
+- User context (if available via `req.user`, `req.session`, etc.)
+- Custom context (via `contextHook`)
+
+**Example auto-logged payload:**
+```javascript
+{
+  title: "GET /api/orders",
+  message: "Request completed successfully",
+  method: "GET",
+  url: "/api/orders",
+  path: "/api/orders",
+  ip: "192.168.1.1",
+  userAgent: "Mozilla/5.0...",
+  requestId: "abc-123",
+  user: { id: 456, email: "user@example.com" },
+  session: { id: "sess_xyz" },
+  query: { page: 1 },
+  params: {},
+  body: { /* request body with redacted fields */ },
+  response: { /* response body with redacted fields */ },
+  responseTime: 45,
+  statusCode: 200,
+  isSlow: false,
+  // Custom fields from contextHook
+  tenantId: "tenant_123",
+  environment: "production"
+}
+```
 
 #### Supported Frameworks
 
@@ -190,14 +227,19 @@ Each log includes:
 const logstyx = require('logstyx-js-node')({
     projectId: 'YOUR_PROJECT_ID',
     apiKey: 'YOUR_API_KEY',
-    autoInstrument: true
+    autoInstrument: true,
+    
+    // Add tenant context to all auto-logs
+    contextHook: (req) => ({
+        tenantId: req.headers['x-tenant-id']
+    })
 });
 
 const express = require('express');
 const app = express();
 
 app.post('/api/orders', async (req, res) => {
-    // HTTP request/response is auto-logged
+    // HTTP request/response is auto-logged with tenantId
     
     // Add custom business logic logs
     logstyx.info({ 
@@ -222,6 +264,75 @@ app.post('/api/orders', async (req, res) => {
 app.listen(3000);
 ```
 
+### Advanced: Custom Context Hook
+
+The `contextHook` allows you to inject custom data into every auto-logged request:
+
+```javascript
+const logstyx = require('logstyx-js-node')({
+    projectId: 'YOUR_PROJECT_ID',
+    apiKey: 'YOUR_API_KEY',
+    autoInstrument: true,
+    
+    contextHook: (req) => {
+        return {
+            // Multi-tenant support
+            tenantId: req.headers['x-tenant-id'],
+            orgId: req.user?.organizationId,
+            
+            // Environment info
+            environment: process.env.NODE_ENV,
+            version: process.env.APP_VERSION,
+            
+            // Feature flags
+            features: req.user?.enabledFeatures || [],
+            
+            // Request tracing
+            traceId: req.headers['x-trace-id'],
+            
+            // Custom business context
+            subscription: req.user?.subscription?.tier
+        };
+    }
+});
+```
+
+All auto-logged requests will now include these custom fields alongside the standard request information.
+
+### Advanced: Custom Payload Builder
+
+Override the entire request payload structure:
+
+```javascript
+const logstyx = require('logstyx-js-node')({
+    projectId: 'YOUR_PROJECT_ID',
+    apiKey: 'YOUR_API_KEY',
+    autoInstrument: true,
+    
+    buildRequestPayload: (req) => {
+        // Custom payload structure
+        return {
+            // Basic request info
+            method: req.method,
+            endpoint: req.path,
+            
+            // Custom user detection
+            userId: req.user?.id || req.headers['x-user-id'],
+            
+            // Custom session handling
+            sessionId: req.cookies?.sessionId,
+            
+            // Include only specific headers
+            correlationId: req.headers['x-correlation-id'],
+            
+            // Business-specific fields
+            storeId: req.headers['x-store-id'],
+            region: req.headers['x-region']
+        };
+    }
+});
+```
+
 ## Configuration Options
 
 ### Basic Options
@@ -242,6 +353,8 @@ app.listen(3000);
 | `ignorePaths` | string[] | `['/health', '/metrics']` | Don't log these paths |
 | `slowRequestThreshold` | number | `1000` | Warn if request exceeds this (ms) |
 | `redactFields` | string[] | `['password', 'token', ...]` | Fields to redact from logs |
+| `buildRequestPayload` | function | `defaultBuilder` | Custom request payload builder |
+| `contextHook` | function | `null` | Add custom context to every log |
 
 ### Example: Full Configuration
 
@@ -270,7 +383,24 @@ const logstyx = require('logstyx-js-node')({
         'apiKey',
         'creditCard',
         'ssn'
-    ]
+    ],
+    
+    // Custom context hook - adds fields to every auto-logged request
+    contextHook: (req) => ({
+        tenantId: req.headers['x-tenant-id'],
+        environment: process.env.NODE_ENV,
+        version: process.env.APP_VERSION
+    }),
+    
+    // Custom payload builder - override default request payload structure
+    buildRequestPayload: (req) => ({
+        method: req.method,
+        path: req.path,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        userId: req.user?.id,
+        // ... custom fields
+    })
 });
 ```
 
@@ -363,4 +493,4 @@ This project is licensed under the ISC License. See the [LICENSE](LICENSE) file 
 
 ---
 
-**Need help?** Check out the [Logstyx Documentation](https://logstyx.com) or open an issue on GitHub.
+**Need help?** Check out the [Logstyx Documentation](https://docs.logstyx.com) or open an issue on GitHub.
