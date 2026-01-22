@@ -1,7 +1,8 @@
 //@ts-check
 const os = require("os");
 const { generateSignature } = require("./../lib/node");
-const useLogstyx = require("logstyx-js-core")
+const useLogstyx = require("logstyx-js-core");
+const { configure, setupAutoInstrumentation } = require("../lib/auto-instrument");
 
 const [major] = process.versions.node.split(".").map(Number);
 if (major < 18) {
@@ -27,7 +28,7 @@ module.exports = (options) => {
         ...options,
         device,
         signatureFunc: generateSignature,
-    })
+    });
 
     if (options?.captureUncaught === true) {
         try {
@@ -41,7 +42,7 @@ module.exports = (options) => {
                 );
             }
         } catch (e) {
-            console.error(e)
+            console.error(e);
         }
     }
 
@@ -58,11 +59,22 @@ module.exports = (options) => {
 
             process.on("unhandledRejection", handler);
         } catch (e) {
-            console.error(e)
+            console.error(e);
         }
     }
 
-    return logstyx
+    // Configure auto-instrumentation if enabled
+    if (options?.autoInstrument === true) {
+        configure(logstyx, {
+            captureHeaders: options.captureHeaders,
+            captureBody: options.captureBody,
+            ignorePaths: options.ignorePaths,
+            slowRequestThreshold: options.slowRequestThreshold,
+            redactFields: options.redactFields
+        });
+    }
 
+    return logstyx;
+};
 
-}
+module.exports.setupAutoInstrumentation = setupAutoInstrumentation
