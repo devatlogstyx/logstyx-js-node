@@ -110,7 +110,8 @@ const logstyx = require('logstyx-js-node')({
     ignorePaths: ['/health', '/metrics'],
     slowRequestThreshold: 1000,
     redactFields: ['password', 'token', 'creditCard'],
-    
+    //Custom ignore logic (e.g., skip successful GET requests)
+    shouldIgnore: (req,res) => req.method === 'GET' && res.statusCode >=400,
     // Add custom context to all auto-logged requests
     contextHook: (req) => ({
         tenantId: req.headers['x-tenant-id'],
@@ -352,6 +353,7 @@ const logstyx = require('logstyx-js-node')({
 | `autoInstrument` | boolean | `false` | Enable automatic HTTP logging |
 | `ignorePaths` | string[] | `['/health', '/metrics']` | Don't log these paths |
 | `slowRequestThreshold` | number | `1000` | Warn if request exceeds this (ms) |
+| `shouldIgnore` | function | `() => false` | Custom function to skip successful logs (e.g., ignore GETs if no error) |
 | `redactFields` | string[] | `['password', 'token', ...]` | Fields to redact from logs |
 | `buildRequestPayload` | function | `defaultBuilder` | Custom request payload builder |
 | `contextHook` | function | `null` | Add custom context to every log |
@@ -374,6 +376,8 @@ const logstyx = require('logstyx-js-node')({
     // Auto-instrumentation
     autoInstrument: true,
     ignorePaths: ['/health', '/metrics', '/favicon.ico'],
+    // Ignore all successful GET requests to reduce noise
+    shouldIgnore: (req,res) => req.method === 'GET' && res.statusCode >=400,
     slowRequestThreshold: 2000,
     redactFields: [
         'password',
@@ -475,10 +479,12 @@ logstyx.clearContext();             // Clear all
 
 ### Too many logs?
 
-Add paths to ignore:
+1. Add paths to ignore:
 ```javascript
 ignorePaths: ['/health', '/metrics', '/favicon.ico', '/static/*']
 ```
+2. Ignore specific methods: 
+Use shouldIgnore: (req,res) => req.method === 'GET' && res.statusCode >=400. This will silence successful GET requests while still logging GET errors (5xx/4xx).
 
 ### Sensitive data in logs?
 

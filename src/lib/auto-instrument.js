@@ -13,7 +13,7 @@ function setupAutoInstrumentation() {
 
     const originalRequire = Module.prototype.require;
 
-    Module.prototype.require = function(id) {
+    Module.prototype.require = function (id) {
         const module = originalRequire.apply(this, arguments);
 
         if (!logstyxInstance) {
@@ -39,17 +39,18 @@ function setupAutoInstrumentation() {
 
 function configure(logstyx, options = {}) {
     logstyxInstance = logstyx;
-    
+
     instrumentConfig = {
         ...instrumentConfig,
         ignorePaths: options.ignorePaths || instrumentConfig.ignorePaths || ['/health', '/metrics'],
+        shouldIgnore: options.shouldIgnore || (() => false),
         slowRequestThreshold: options.slowRequestThreshold || instrumentConfig.slowRequestThreshold || 1000,
         redactFields: options.redactFields || instrumentConfig.redactFields || ['password', 'token', 'authorization', 'secret', 'apikey', 'api_key'],
         buildRequestPayload: options.buildRequestPayload || instrumentConfig.buildRequestPayload || defaultBuildRequestPayload,
         contextHook: options.contextHook || instrumentConfig.contextHook || null,
         ...options
     };
-    
+
     console.log('[Logstyx] Auto-instrumentation configured');
 }
 
@@ -74,12 +75,12 @@ function wrapExpress(express, config) {
         app.use((req, res, next) => {
             const startTime = Date.now();
             let logged = false;
-            
+
             // 🔥 NEW: Store error on request object
             req._logstyxError = null;
 
-            // Skip ignored paths
-            if (config.ignorePaths.some(path => req.path.startsWith(path))) {
+            const isIgnoredPath = config.ignorePaths.some(path => req.path.startsWith(path));
+            if (isIgnoredPath) {
                 return next();
             }
 
@@ -89,19 +90,25 @@ function wrapExpress(express, config) {
 
             function logRequest(method, responseBody) {
                 if (logged) return;
+
+
+                const isIgnoredCustom = config.shouldIgnore(req, res);
+                if (isIgnoredCustom) {
+                    return;
+                }
+
                 logged = true;
 
-                const responseTime = Date.now() - startTime;
                 const statusCode = res.statusCode;
-                
+                const responseTime = Date.now() - startTime;
                 const requestPayload = buildFinalPayload(req, config);
 
                 const logData = {
                     title: `${req.method} ${req.originalUrl}`,
                     ...requestPayload,
                     body: redactObject(req.body, config.redactFields),
-                    response: (method === 'json' || method === 'send') 
-                        ? redactObject(responseBody, config.redactFields) 
+                    response: (method === 'json' || method === 'send')
+                        ? redactObject(responseBody, config.redactFields)
                         : null,
                     responseTime,
                     statusCode,
@@ -120,13 +127,13 @@ function wrapExpress(express, config) {
 
                 // Determine log level and message
                 if (statusCode >= 500) {
-                    logData.message = req._logstyxError 
-                        ? req._logstyxError.message 
+                    logData.message = req._logstyxError
+                        ? req._logstyxError.message
                         : 'Server error occurred';
                     logstyxInstance.critical(logData);
                 } else if (statusCode >= 400) {
-                    logData.message = statusCode === 404 
-                        ? 'Route not found' 
+                    logData.message = statusCode === 404
+                        ? 'Route not found'
                         : (req._logstyxError?.message || 'Client error');
                     logstyxInstance.error(logData);
                 } else if (responseTime > config.slowRequestThreshold) {
@@ -138,17 +145,17 @@ function wrapExpress(express, config) {
                 }
             }
 
-            res.send = function(...args) {
+            res.send = function (...args) {
                 logRequest('send', args[0]);
                 return originalSend.apply(this, args);
             };
 
-            res.json = function(...args) {
+            res.json = function (...args) {
                 logRequest('json', args[0]);
                 return originalJson.apply(this, args);
             };
 
-            res.end = function(...args) {
+            res.end = function (...args) {
                 logRequest('end', args[0]);
                 return originalEnd.apply(this, args);
             };
@@ -159,21 +166,21 @@ function wrapExpress(express, config) {
         // 🔥 NEW: Add error-capturing middleware at the END
         // This must be added AFTER user routes, so we return a modified app
         const originalListen = app.listen;
-        app.listen = function(...args) {
+        app.listen = function (...args) {
             // Inject error handler before actually listening
             app.use((err, req, res, next) => {
                 // Store error for logging
                 req._logstyxError = err;
-                
+
                 // Set status code if not already set
                 if (!res.statusCode || res.statusCode === 200) {
                     res.statusCode = err.status || err.statusCode || 500;
                 }
-                
+
                 // Pass to next error handler (user's or Express default)
                 next(err);
             });
-            
+
             return originalListen.apply(this, args);
         };
 
@@ -201,10 +208,12 @@ function wrapFastify(fastify, config) {
         });
 
         instance.addHook('onResponse', async (request, reply) => {
-            if (config.ignorePaths.some(path => request.url.startsWith(path))) {
+            const isIgnoredPath = config.ignorePaths.some(path => request.url.startsWith(path));
+            const isIgnoredCustom = config.shouldIgnore(request, reply);
+
+            if (isIgnoredPath || isIgnoredCustom) {
                 return;
             }
-
             const responseTime = Date.now() - request._logstyxStartTime;
             const statusCode = reply.statusCode;
 
@@ -231,13 +240,13 @@ function wrapFastify(fastify, config) {
 
             // Determine log level and message
             if (statusCode >= 500) {
-                logData.message = request._logstyxError 
-                    ? request._logstyxError.message 
+                logData.message = request._logstyxError
+                    ? request._logstyxError.message
                     : 'Server error occurred';
                 logstyxInstance.critical(logData);
             } else if (statusCode >= 400) {
-                logData.message = statusCode === 404 
-                    ? 'Route not found' 
+                logData.message = statusCode === 404
+                    ? 'Route not found'
                     : (request._logstyxError?.message || 'Client error');
                 logstyxInstance.error(logData);
             } else if (responseTime > config.slowRequestThreshold) {
@@ -272,13 +281,13 @@ function defaultBuildRequestPayload(req) {
 
 function findUserInRequest(req) {
     const userSources = [
-        req.user, 
-        req.auth?.user, 
+        req.user,
+        req.auth?.user,
         req.session?.user,
-        req.locals?.user, 
-        req.context?.user, 
+        req.locals?.user,
+        req.context?.user,
         req.currentUser,
-        req.account, 
+        req.account,
         req.profile
     ];
     const user = userSources.find(source =>
@@ -320,12 +329,12 @@ function buildFinalPayloadForFastify(request, config) {
     };
 
     let context = config.buildRequestPayload(reqAdapter);
-    
+
     if (config.contextHook) {
         const customPayload = config.contextHook(reqAdapter);
         context = { ...context, ...customPayload };
     }
-    
+
     return redactObject(context, config.redactFields);
 }
 
