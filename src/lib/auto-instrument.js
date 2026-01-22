@@ -2,7 +2,7 @@
 
 const Module = require('module');
 
-let isInstrumented = false;
+let isInstrumented = false
 let logstyxInstance = null;
 let instrumentConfig = {};
 
@@ -51,18 +51,32 @@ function setupAutoInstrumentation() {
  */
 function configure(logstyx, options = {}) {
     logstyxInstance = logstyx;
+    
+    // Merge with existing config (allows late configuration updates)
     instrumentConfig = {
-        captureHeaders: options.captureHeaders || false,
-        captureBody: options.captureBody || false,
-        ignorePaths: options.ignorePaths || ['/health', '/metrics'],
-        slowRequestThreshold: options.slowRequestThreshold || 1000,
-        redactFields: options.redactFields || ['password', 'token', 'authorization', 'secret', 'apikey', 'api_key'],
-        buildRequestPayload: options.buildRequestPayload || defaultBuildRequestPayload,
-        contextHook: options.contextHook || null,
+        ...instrumentConfig,
+        ignorePaths: options.ignorePaths || instrumentConfig.ignorePaths || ['/health', '/metrics'],
+        slowRequestThreshold: options.slowRequestThreshold || instrumentConfig.slowRequestThreshold || 1000,
+        redactFields: options.redactFields || instrumentConfig.redactFields || ['password', 'token', 'authorization', 'secret', 'apikey', 'api_key'],
+        buildRequestPayload: options.buildRequestPayload || instrumentConfig.buildRequestPayload || defaultBuildRequestPayload,
+        contextHook: options.contextHook || instrumentConfig.contextHook || null,
         ...options
     };
     
     console.log('[Logstyx] Auto-instrumentation configured');
+}
+
+/**
+ * Update configuration without replacing logstyx instance
+ * Useful when using --require flag and wanting to configure options later
+ * @param {Object} options - Configuration options to update
+ */
+function updateConfig(options = {}) {
+    instrumentConfig = {
+        ...instrumentConfig,
+        ...options
+    };
+    console.log('[Logstyx] Auto-instrumentation config updated');
 }
 
 /**
@@ -171,17 +185,8 @@ function wrapFastify(fastify, config) {
             const responseTime = Date.now() - request._logstyxStartTime;
             const statusCode = reply.statusCode;
 
-            // Build minimal request payload for Fastify
-            const requestPayload = {
-                method: request.method,
-                url: request.url,
-                path: request.url,
-                ip: request.ip,
-                userAgent: request.headers['user-agent'],
-                requestId: request.id,
-                query: request.query,
-                params: request.params
-            };
+            // Build request payload using same structure as Express
+            const requestPayload = buildFinalPayloadForFastify(request, config);
 
             const logData = {
                 title: `${request.method} ${request.url}`,
@@ -191,13 +196,7 @@ function wrapFastify(fastify, config) {
                 isSlow: responseTime > config.slowRequestThreshold
             };
 
-            if (config.captureHeaders) {
-                logData.headers = redactObject(request.headers, config.redactFields);
-            }
-
-            if (config.captureBody && request.body) {
-                logData.body = redactObject(request.body, config.redactFields);
-            }
+            logData.body = redactObject(request.body, config.redactFields);
 
             // Determine log level and message
             if (statusCode >= 500) {
@@ -282,6 +281,39 @@ function buildFinalPayload(req, config) {
 }
 
 /**
+ * Build final payload for Fastify (adapter for Fastify request object)
+ */
+function buildFinalPayloadForFastify(request, config) {
+    // Create an Express-like request object adapter
+    const reqAdapter = {
+        method: request.method,
+        url: request.url,
+        path: request.url,
+        ip: request.ip,
+        headers: request.headers,
+        id: request.id,
+        query: request.query,
+        params: request.params,
+        body: request.body,
+        // Fastify doesn't have these by default, but allow custom logic to access them
+        session: request.session || null,
+        user: request.user || null,
+        // Express-like get method
+        get: (header) => request.headers[header.toLowerCase()]
+    };
+
+    // Use the same buildRequestPayload function
+    let context = config.buildRequestPayload(reqAdapter);
+    
+    if (config.contextHook) {
+        const customPayload = config.contextHook(reqAdapter);
+        context = { ...context, ...customPayload };
+    }
+    
+    return redactObject(context, config.redactFields);
+}
+
+/**
  * Redact sensitive fields from objects (matches Express middleware logic)
  */
 function redactObject(obj, redactFields) {
@@ -310,4 +342,4 @@ function redactObject(obj, redactFields) {
 // Setup the hook immediately when this module loads
 setupAutoInstrumentation();
 
-module.exports = { configure, setupAutoInstrumentation };
+module.exports = { configure, setupAutoInstrumentation, updateConfig };

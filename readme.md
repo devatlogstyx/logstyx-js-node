@@ -106,9 +106,6 @@ const logstyx = require('logstyx-js-node')({
     apiKey: 'YOUR_API_KEY',
     autoInstrument: true,
     
-    // Optional: Configure what to capture
-    captureHeaders: false,
-    captureBody: true,
     ignorePaths: ['/health', '/metrics'],
     slowRequestThreshold: 1000,
     redactFields: ['password', 'token', 'creditCard']
@@ -180,8 +177,6 @@ Each log includes:
 - Status code
 - Response time
 - IP address and user agent
-- Request/response body (if `captureBody: true`)
-- Headers (if `captureHeaders: true`)
 
 #### Supported Frameworks
 
@@ -244,8 +239,6 @@ app.listen(3000);
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `autoInstrument` | boolean | `false` | Enable automatic HTTP logging |
-| `captureHeaders` | boolean | `false` | Include request headers in logs |
-| `captureBody` | boolean | `false` | Include request/response body |
 | `ignorePaths` | string[] | `['/health', '/metrics']` | Don't log these paths |
 | `slowRequestThreshold` | number | `1000` | Warn if request exceeds this (ms) |
 | `redactFields` | string[] | `['password', 'token', ...]` | Fields to redact from logs |
@@ -267,8 +260,6 @@ const logstyx = require('logstyx-js-node')({
     
     // Auto-instrumentation
     autoInstrument: true,
-    captureHeaders: false,
-    captureBody: true,
     ignorePaths: ['/health', '/metrics', '/favicon.ico'],
     slowRequestThreshold: 2000,
     redactFields: [

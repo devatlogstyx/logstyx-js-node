@@ -2,7 +2,7 @@
 const os = require("os");
 const { generateSignature } = require("./../lib/node");
 const useLogstyx = require("logstyx-js-core");
-const { configure, setupAutoInstrumentation } = require("../lib/auto-instrument");
+const { configure, setupAutoInstrumentation, updateConfig } = require("../lib/auto-instrument");
 
 const [major] = process.versions.node.split(".").map(Number);
 if (major < 18) {
@@ -70,11 +70,15 @@ module.exports = (options) => {
             captureBody: options.captureBody,
             ignorePaths: options.ignorePaths,
             slowRequestThreshold: options.slowRequestThreshold,
-            redactFields: options.redactFields
+            redactFields: options.redactFields,
+            buildRequestPayload: options.buildRequestPayload,
+            contextHook: options.contextHook
         });
     }
 
     return logstyx;
 };
 
-module.exports.setupAutoInstrumentation = setupAutoInstrumentation
+// Export for register.js and advanced usage
+module.exports.setupAutoInstrumentation = setupAutoInstrumentation;
+module.exports.updateConfig = updateConfig;
