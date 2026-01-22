@@ -1,4 +1,4 @@
-// logstyx-js-node/auto-instrument.js
+// logstyx-js-node/auto-instrument.js (ENHANCED VERSION)
 
 const Module = require('module');
 
@@ -6,10 +6,6 @@ let isInstrumented = false
 let logstyxInstance = null;
 let instrumentConfig = {};
 
-/**
- * Setup auto-instrumentation hook
- * This patches Module.prototype.require to intercept framework imports
- */
 function setupAutoInstrumentation() {
     if (isInstrumented) {
         return;
@@ -20,18 +16,15 @@ function setupAutoInstrumentation() {
     Module.prototype.require = function(id) {
         const module = originalRequire.apply(this, arguments);
 
-        // Only instrument if we have a logstyx instance configured
         if (!logstyxInstance) {
             return module;
         }
 
-        // Instrument Express
         if (id === 'express' && !module.__logstyx_instrumented) {
             module.__logstyx_instrumented = true;
             return wrapExpress(module, instrumentConfig);
         }
 
-        // Instrument Fastify
         if (id === 'fastify' && !module.__logstyx_instrumented) {
             module.__logstyx_instrumented = true;
             return wrapFastify(module, instrumentConfig);
@@ -44,15 +37,9 @@ function setupAutoInstrumentation() {
     console.log('[Logstyx] Auto-instrumentation hook installed');
 }
 
-/**
- * Configure the logstyx instance and options
- * @param {Object} logstyx - Logstyx instance from logstyx-js-core
- * @param {Object} options - Instrumentation options
- */
 function configure(logstyx, options = {}) {
     logstyxInstance = logstyx;
     
-    // Merge with existing config (allows late configuration updates)
     instrumentConfig = {
         ...instrumentConfig,
         ignorePaths: options.ignorePaths || instrumentConfig.ignorePaths || ['/health', '/metrics'],
@@ -66,11 +53,6 @@ function configure(logstyx, options = {}) {
     console.log('[Logstyx] Auto-instrumentation configured');
 }
 
-/**
- * Update configuration without replacing logstyx instance
- * Useful when using --require flag and wanting to configure options later
- * @param {Object} options - Configuration options to update
- */
 function updateConfig(options = {}) {
     instrumentConfig = {
         ...instrumentConfig,
@@ -80,7 +62,7 @@ function updateConfig(options = {}) {
 }
 
 /**
- * Wrap Express framework
+ * Wrap Express framework with enhanced error tracking
  */
 function wrapExpress(express, config) {
     const originalExpress = express;
@@ -88,10 +70,13 @@ function wrapExpress(express, config) {
     return function wrappedExpress() {
         const app = originalExpress();
 
-        // Inject logging middleware at the start
+        // 🔥 NEW: Add error capture middleware at the START
         app.use((req, res, next) => {
             const startTime = Date.now();
             let logged = false;
+            
+            // 🔥 NEW: Store error on request object
+            req._logstyxError = null;
 
             // Skip ignored paths
             if (config.ignorePaths.some(path => req.path.startsWith(path))) {
@@ -109,7 +94,6 @@ function wrapExpress(express, config) {
                 const responseTime = Date.now() - startTime;
                 const statusCode = res.statusCode;
                 
-                // Build request payload using the same structure as express middleware
                 const requestPayload = buildFinalPayload(req, config);
 
                 const logData = {
@@ -124,12 +108,26 @@ function wrapExpress(express, config) {
                     isSlow: responseTime > config.slowRequestThreshold
                 };
 
+                // 🔥 NEW: Add error details if available
+                if (req._logstyxError) {
+                    logData.error = {
+                        message: req._logstyxError.message,
+                        stack: req._logstyxError.stack,
+                        name: req._logstyxError.name,
+                        code: req._logstyxError.code
+                    };
+                }
+
                 // Determine log level and message
                 if (statusCode >= 500) {
-                    logData.message = 'Server error occurred';
+                    logData.message = req._logstyxError 
+                        ? req._logstyxError.message 
+                        : 'Server error occurred';
                     logstyxInstance.critical(logData);
                 } else if (statusCode >= 400) {
-                    logData.message = statusCode === 404 ? 'Route not found' : 'Client error';
+                    logData.message = statusCode === 404 
+                        ? 'Route not found' 
+                        : (req._logstyxError?.message || 'Client error');
                     logstyxInstance.error(logData);
                 } else if (responseTime > config.slowRequestThreshold) {
                     logData.message = `Slow request detected (${responseTime}ms)`;
@@ -158,12 +156,33 @@ function wrapExpress(express, config) {
             next();
         });
 
+        // 🔥 NEW: Add error-capturing middleware at the END
+        // This must be added AFTER user routes, so we return a modified app
+        const originalListen = app.listen;
+        app.listen = function(...args) {
+            // Inject error handler before actually listening
+            app.use((err, req, res, next) => {
+                // Store error for logging
+                req._logstyxError = err;
+                
+                // Set status code if not already set
+                if (!res.statusCode || res.statusCode === 200) {
+                    res.statusCode = err.status || err.statusCode || 500;
+                }
+                
+                // Pass to next error handler (user's or Express default)
+                next(err);
+            });
+            
+            return originalListen.apply(this, args);
+        };
+
         return app;
     };
 }
 
 /**
- * Wrap Fastify framework
+ * Wrap Fastify framework with enhanced error tracking
  */
 function wrapFastify(fastify, config) {
     const originalFastify = fastify;
@@ -171,13 +190,17 @@ function wrapFastify(fastify, config) {
     return function wrappedFastify(opts) {
         const instance = originalFastify(opts);
 
-        // Add hooks for logging
         instance.addHook('onRequest', async (request, reply) => {
             request._logstyxStartTime = Date.now();
+            request._logstyxError = null; // 🔥 NEW: Store error
+        });
+
+        // 🔥 NEW: Capture errors
+        instance.addHook('onError', async (request, reply, error) => {
+            request._logstyxError = error;
         });
 
         instance.addHook('onResponse', async (request, reply) => {
-            // Skip ignored paths
             if (config.ignorePaths.some(path => request.url.startsWith(path))) {
                 return;
             }
@@ -185,7 +208,6 @@ function wrapFastify(fastify, config) {
             const responseTime = Date.now() - request._logstyxStartTime;
             const statusCode = reply.statusCode;
 
-            // Build request payload using same structure as Express
             const requestPayload = buildFinalPayloadForFastify(request, config);
 
             const logData = {
@@ -193,17 +215,30 @@ function wrapFastify(fastify, config) {
                 ...requestPayload,
                 responseTime,
                 statusCode,
-                isSlow: responseTime > config.slowRequestThreshold
+                isSlow: responseTime > config.slowRequestThreshold,
+                body: redactObject(request.body, config.redactFields)
             };
 
-            logData.body = redactObject(request.body, config.redactFields);
+            // 🔥 NEW: Add error details if available
+            if (request._logstyxError) {
+                logData.error = {
+                    message: request._logstyxError.message,
+                    stack: request._logstyxError.stack,
+                    name: request._logstyxError.name,
+                    code: request._logstyxError.code
+                };
+            }
 
             // Determine log level and message
             if (statusCode >= 500) {
-                logData.message = 'Server error occurred';
+                logData.message = request._logstyxError 
+                    ? request._logstyxError.message 
+                    : 'Server error occurred';
                 logstyxInstance.critical(logData);
             } else if (statusCode >= 400) {
-                logData.message = statusCode === 404 ? 'Route not found' : 'Client error';
+                logData.message = statusCode === 404 
+                    ? 'Route not found' 
+                    : (request._logstyxError?.message || 'Client error');
                 logstyxInstance.error(logData);
             } else if (responseTime > config.slowRequestThreshold) {
                 logData.message = `Slow request detected (${responseTime}ms)`;
@@ -218,9 +253,6 @@ function wrapFastify(fastify, config) {
     };
 }
 
-/**
- * Default request payload builder (matches Express middleware structure)
- */
 function defaultBuildRequestPayload(req) {
     const context = {
         method: req.method,
@@ -238,9 +270,6 @@ function defaultBuildRequestPayload(req) {
     return context;
 }
 
-/**
- * Find user in request (matches Express middleware logic)
- */
 function findUserInRequest(req) {
     const userSources = [
         req.user, 
@@ -258,9 +287,6 @@ function findUserInRequest(req) {
     return user || null;
 }
 
-/**
- * Find admin in request (matches Express middleware logic)
- */
 function findAdminInRequest(req) {
     return req.admin ||
         (req.user?.isAdmin ? req.user : null) ||
@@ -268,9 +294,6 @@ function findAdminInRequest(req) {
         null;
 }
 
-/**
- * Build final payload with custom context hook
- */
 function buildFinalPayload(req, config) {
     let context = config.buildRequestPayload(req);
     if (config.contextHook) {
@@ -280,11 +303,7 @@ function buildFinalPayload(req, config) {
     return redactObject(context, config.redactFields);
 }
 
-/**
- * Build final payload for Fastify (adapter for Fastify request object)
- */
 function buildFinalPayloadForFastify(request, config) {
-    // Create an Express-like request object adapter
     const reqAdapter = {
         method: request.method,
         url: request.url,
@@ -295,14 +314,11 @@ function buildFinalPayloadForFastify(request, config) {
         query: request.query,
         params: request.params,
         body: request.body,
-        // Fastify doesn't have these by default, but allow custom logic to access them
         session: request.session || null,
         user: request.user || null,
-        // Express-like get method
         get: (header) => request.headers[header.toLowerCase()]
     };
 
-    // Use the same buildRequestPayload function
     let context = config.buildRequestPayload(reqAdapter);
     
     if (config.contextHook) {
@@ -313,13 +329,9 @@ function buildFinalPayloadForFastify(request, config) {
     return redactObject(context, config.redactFields);
 }
 
-/**
- * Redact sensitive fields from objects (matches Express middleware logic)
- */
 function redactObject(obj, redactFields) {
     if (!obj || typeof obj !== 'object') return obj;
 
-    // Convert Mongoose documents to plain objects
     if (obj.toObject && typeof obj.toObject === 'function') {
         obj = obj.toObject();
     }
@@ -339,7 +351,6 @@ function redactObject(obj, redactFields) {
     return out;
 }
 
-// Setup the hook immediately when this module loads
 setupAutoInstrumentation();
 
 module.exports = { configure, setupAutoInstrumentation, updateConfig };
