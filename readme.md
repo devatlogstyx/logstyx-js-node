@@ -110,8 +110,8 @@ const logstyx = require('logstyx-js-node')({
     ignorePaths: ['/health', '/metrics'],
     slowRequestThreshold: 1000,
     redactFields: ['password', 'token', 'creditCard'],
-    //Custom ignore logic (e.g., skip successful GET requests)
-    shouldIgnore: (req,res) => req.method === 'GET' && res.statusCode >=400,
+    //Custom ignore logic (e.g., skip Fast & successful GET requests)
+    shouldIgnore: (req,res) => req.method === 'GET' && res.statusCode <=400 && res.isSlow,
     // Add custom context to all auto-logged requests
     contextHook: (req) => ({
         tenantId: req.headers['x-tenant-id'],
@@ -376,9 +376,9 @@ const logstyx = require('logstyx-js-node')({
     // Auto-instrumentation
     autoInstrument: true,
     ignorePaths: ['/health', '/metrics', '/favicon.ico'],
-    // Ignore all successful GET requests to reduce noise
-    shouldIgnore: (req,res) => req.method === 'GET' && res.statusCode >=400,
     slowRequestThreshold: 2000,
+    // Ignore all successful GET requests to reduce noise
+    shouldIgnore: (req,res) => req.method === 'GET' && res.statusCode <=400 && res.isSlow,
     redactFields: [
         'password',
         'token',
@@ -485,6 +485,8 @@ ignorePaths: ['/health', '/metrics', '/favicon.ico', '/static/*']
 ```
 2. Ignore specific methods: 
 Use shouldIgnore: (req,res) => req.method === 'GET' && res.statusCode >=400. This will silence successful GET requests while still logging GET errors (5xx/4xx).
+
+Note: The shouldIgnore hook allows you to filter out high-traffic, low-value logs. However, Logstyx will always log a request if it exceeds your slowRequestThreshold or results in an error, ensuring you never miss performance bottlenecks or system failures
 
 ### Sensitive data in logs?
 

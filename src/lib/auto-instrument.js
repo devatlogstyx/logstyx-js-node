@@ -91,17 +91,19 @@ function wrapExpress(express, config) {
             function logRequest(method, responseBody) {
                 if (logged) return;
 
-
-                const isIgnoredCustom = config.shouldIgnore(req, res);
-                if (isIgnoredCustom) {
-                    return;
-                }
-
                 logged = true;
 
                 const statusCode = res.statusCode;
                 const responseTime = Date.now() - startTime;
                 const requestPayload = buildFinalPayload(req, config);
+                const isSlow = responseTime > config.slowRequestThreshold
+
+                res.isSlow = isSlow
+
+                const isIgnoredCustom = config.shouldIgnore(req, res);
+                if (isIgnoredCustom) {
+                    return;
+                }
 
                 const logData = {
                     title: `${req.method} ${req.originalUrl}`,
@@ -112,7 +114,7 @@ function wrapExpress(express, config) {
                         : null,
                     responseTime,
                     statusCode,
-                    isSlow: responseTime > config.slowRequestThreshold
+                    isSlow
                 };
 
                 // 🔥 NEW: Add error details if available
@@ -209,13 +211,19 @@ function wrapFastify(fastify, config) {
 
         instance.addHook('onResponse', async (request, reply) => {
             const isIgnoredPath = config.ignorePaths.some(path => request.url.startsWith(path));
-            const isIgnoredCustom = config.shouldIgnore(request, reply);
 
-            if (isIgnoredPath || isIgnoredCustom) {
+            if (isIgnoredPath) {
                 return;
             }
             const responseTime = Date.now() - request._logstyxStartTime;
             const statusCode = reply.statusCode;
+            const isSlow = responseTime > config.slowRequestThreshold
+            reply.isSlow = responseTime;
+            const isIgnoredCustom = config.shouldIgnore(request, reply);
+
+            if (isIgnoredCustom) {
+                return
+            }
 
             const requestPayload = buildFinalPayloadForFastify(request, config);
 
@@ -224,7 +232,7 @@ function wrapFastify(fastify, config) {
                 ...requestPayload,
                 responseTime,
                 statusCode,
-                isSlow: responseTime > config.slowRequestThreshold,
+                isSlow,
                 body: redactObject(request.body, config.redactFields)
             };
 
