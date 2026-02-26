@@ -68,8 +68,8 @@ function updateConfig(options = {}) {
 function wrapExpress(express, config) {
     const originalExpress = express;
 
-    return function wrappedExpress() {
-        const app = originalExpress();
+    function wrappedExpress(opts) {
+        const app = originalExpress(opts);
 
         // 🔥 NEW: Add error capture middleware at the START
         app.use((req, res, next) => {
@@ -188,6 +188,12 @@ function wrapExpress(express, config) {
 
         return app;
     };
+
+    Object.assign(wrappedExpress, originalExpress);
+    Object.setPrototypeOf(wrappedExpress, Object.getPrototypeOf(originalExpress));
+
+    return wrappedExpress;
+
 }
 
 /**
@@ -218,7 +224,7 @@ function wrapFastify(fastify, config) {
             const responseTime = Date.now() - request._logstyxStartTime;
             const statusCode = reply.statusCode;
             const isSlow = responseTime > config.slowRequestThreshold
-            reply.isSlow = responseTime;
+            reply.isSlow = isSlow;
             const isIgnoredCustom = config.shouldIgnore(request, reply);
 
             if (isIgnoredCustom) {
