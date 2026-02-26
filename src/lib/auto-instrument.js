@@ -79,7 +79,7 @@ function wrapExpress(express, config) {
             // 🔥 NEW: Store error on request object
             req._logstyxError = null;
 
-            const isIgnoredPath = config.ignorePaths.some(path => req.path.startsWith(path));
+            const isIgnoredPath = (config.ignorePaths || []).some(path => req.path.startsWith(path));
             if (isIgnoredPath) {
                 return next();
             }
@@ -216,7 +216,7 @@ function wrapFastify(fastify, config) {
         });
 
         instance.addHook('onResponse', async (request, reply) => {
-            const isIgnoredPath = config.ignorePaths.some(path => request.url.startsWith(path));
+            const isIgnoredPath = (config.ignorePaths || []).some(path => request.url.startsWith(path));
 
             if (isIgnoredPath) {
                 return;
