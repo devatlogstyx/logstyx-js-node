@@ -71,7 +71,25 @@ function wrapExpress(express, config) {
     function wrappedExpress(opts) {
         const app = originalExpress(opts);
 
-        // 🔥 NEW: Add error capture middleware at the START
+        const originalUse = app.use.bind(app);
+        app.use = function (...args) {
+            args = args.map(fn => {
+                if (typeof fn !== 'function') return fn;
+
+                if (fn.length === 4) {
+                    return function (err, req, res, next) {
+                        req._logstyxError = err instanceof Error
+                            ? err
+                            : Object.assign(new Error(err.message || 'Unknown error'), err);
+                        return fn(err, req, res, next);
+                    };
+                }
+
+                return fn;
+            });
+            return originalUse(...args);
+        };
+
         app.use((req, res, next) => {
             const startTime = Date.now();
             let logged = false;
