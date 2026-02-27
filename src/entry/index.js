@@ -65,15 +65,7 @@ module.exports = (options) => {
 
     // Configure auto-instrumentation if enabled
     if (options?.autoInstrument === true) {
-        configure(logstyx, {
-            captureHeaders: options.captureHeaders,
-            captureBody: options.captureBody,
-            ignorePaths: options.ignorePaths,
-            slowRequestThreshold: options.slowRequestThreshold,
-            redactFields: options.redactFields,
-            buildRequestPayload: options.buildRequestPayload,
-            contextHook: options.contextHook
-        });
+        configure(logstyx, options);
     }
 
     return logstyx;
