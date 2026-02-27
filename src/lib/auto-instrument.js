@@ -161,7 +161,7 @@ function wrapExpress(express, config) {
                     logstyxInstance.warning(logData);
                 } else {
                     logData.message = 'Request completed successfully';
-                    logstyxInstance.info(logData);
+                    logstyxInstance.success(logData);
                 }
             }
 
@@ -282,7 +282,7 @@ function wrapFastify(fastify, config) {
                 logstyxInstance.warning(logData);
             } else {
                 logData.message = 'Request completed successfully';
-                logstyxInstance.info(logData);
+                logstyxInstance.success(logData);
             }
         });
 
