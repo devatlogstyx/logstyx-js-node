@@ -1,6 +1,6 @@
 {
   "name": "logstyx-js-node",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "logstyx sdk for nodejs",
   "main": "./dist/logstyx-js-node.js",
   "files": [
