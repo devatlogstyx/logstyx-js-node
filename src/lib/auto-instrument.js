@@ -162,27 +162,18 @@ function wrapExpress(express, config) {
                 return originalEnd.apply(this, args);
             };
 
-            next();
+            function wrappedNext(err) {
+                if (err) req._logstyxError = err;
+                return next(err);
+            }
+            wrappedNext();
         });
-
-        // 🔥 NEW: Add error-capturing middleware at the END
-        // This must be added AFTER user routes, so we return a modified app
+        
         const originalListen = app.listen;
         app.listen = function (...args) {
-            // Inject error handler before actually listening
-            app.use((err, req, res, next) => {
-                // Store error for logging
-                req._logstyxError = err;
-
-                // Set status code if not already set
-                if (!res.statusCode || res.statusCode === 200) {
-                    res.statusCode = err.status || err.statusCode || 500;
-                }
-
-                // Pass to next error handler (user's or Express default)
-                next(err);
+            app.use((req, res, next) => {
+                res.status(404).end();
             });
-
             return originalListen.apply(this, args);
         };
 
