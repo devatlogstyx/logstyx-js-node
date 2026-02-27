@@ -162,13 +162,17 @@ function wrapExpress(express, config) {
                 return originalEnd.apply(this, args);
             };
 
-            function wrappedNext(err) {
+            const wrappedNext = function (err) {
                 if (err) req._logstyxError = err;
                 return next(err);
-            }
+            };
+
+            req.next = wrappedNext;
+
             wrappedNext();
+
         });
-        
+
         const originalListen = app.listen;
         app.listen = function (...args) {
             app.use((req, res, next) => {
@@ -182,6 +186,7 @@ function wrapExpress(express, config) {
 
     Object.assign(wrappedExpress, originalExpress);
     Object.setPrototypeOf(wrappedExpress, Object.getPrototypeOf(originalExpress));
+
 
     return wrappedExpress;
 
